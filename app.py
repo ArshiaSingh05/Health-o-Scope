@@ -53,193 +53,230 @@ def percentile_overlay(series, user_value, title):
 if page == "Home":
     st.title("Health Risk Assessment System")
     st.write("Choose a prediction card. Clicking a card opens only the inputs needed for that prediction.")
-    cols = st.columns(3)
+
+    # ---- Card Styling ----
+    st.markdown("""
+        <style>
+        .card {
+            padding: 20px;
+            border-radius: 14px;
+            background-color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s ease;
+            width: 260px;
+            height: 160px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin: auto;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .card-desc {
+            font-size: 14px;
+            color: #555;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     cards = [
-        ("High Blood Pressure", "model_high_bp"),
-        ("High Cholesterol", "model_high_chol"),
-        ("Heart Disease", "model_heart_disease"),
-        ("Depression (PHQ-9)", "model_phq9_score"),
-        ("Lifestyle Risk", "model_lifestyle_score"),
-        ("BMI Prediction", "model_bmi"),
-        ("LDL/HDL/Total cholesterol", "model_ldl")
+        ("Blood Pressure Check", "Checks your BP-related health risk.", "model_high_bp"),
+        ("Cholesterol Check", "Predicts overall cholesterol risk.", "model_high_chol"),
+        ("Heart Health Check", "Estimates heart disease likelihood.", "model_heart_disease"),
+        ("Mood & Mental Well-Being", "Assesses mood using PHQ-9 questionnaire.", "model_phq9_score"),
+        ("Daily Habits Health Score", "Rates smoking & drinking lifestyle habits.", "model_lifestyle_score"),
+        ("Body Weight Indicator (BMI)", "Estimates BMI from body measures.", "model_bmi"),
+        ("Detailed Cholesterol Report", "Predicts LDL, HDL & Total Cholesterol.", "model_ldl"),
     ]
-    i = 0
-    for label, mname in cards:
-        with cols[i % 3]:
-            if st.button(label):
-                st.session_state["selected_card"] = (label, mname)
-                st.experimental_rerun()
-        i += 1
+
+    # Create rows of 3
+    rows = [cards[i:i+3] for i in range(0, len(cards), 3)]
+
+    for row in rows:
+        st.write("")              # spacing between rows
+        cols = st.columns(3, gap="large")
+
+        # If this is a short row (like only 1 card), center it
+        offset = (3 - len(row)) // 2
+
+        for idx, (title, desc, model_key) in enumerate(row):
+            with cols[idx + offset]:
+                card_html = f"""
+                <div class="card" onclick="window.location.href='?page=Predict&card={model_key}'">
+                    <div class="card-title">{title}</div>
+                    <div class="card-desc">{desc}</div>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
+
+                st.button(f"_{model_key}", key=model_key, disabled=True)
+
+        # Center the last single card if row has fewer than 3
+        if len(row) < 3:
+            for _ in range(3 - len(row)):
+                cols[_].write("")
 
     st.markdown("---")
-    st.subheader("Quick dataset stats")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Rows (cleaned)", df.shape[0])
-    c2.metric("Columns", df.shape[1])
-    c3.metric("Avg PHQ-9 score", round(df["phq9_score"].mean(),2))
+
+    # ------------------------
+    # Quick Dataset Stats
+    # ------------------------
+    
+    #st.subheader("Quick dataset stats")
+    #c1, c2, c3 = st.columns(3)
+    #c1.metric("Rows (cleaned)", df.shape[0])
+    #c2.metric("Columns", df.shape[1])
+    #c3.metric("Avg PHQ-9 score", round(df["phq9_score"].mean(),2))
 
 # ---------- PREDICT ----------
 elif page == "Predict":
     st.title("Make a prediction")
-    # Determine selection: either session_state or show selector
-    selected = st.session_state.get("selected_card", None)
-    if not selected:
-        sel = st.selectbox("Select a prediction", ["High Blood Pressure", "High Cholesterol",
-                                                  "Heart Disease", "Depression (PHQ-9)",
-                                                  "Lifestyle Risk", "BMI Prediction", "LDL/HDL/Total cholesterol"])
-        # map to names
-        name_map = {
-            "High Blood Pressure":"model_high_bp",
-            "High Cholesterol":"model_high_chol",
-            "Heart Disease":"model_heart_disease",
-            "Depression (PHQ-9)":"model_phq9_score",
-            "Lifestyle Risk":"model_lifestyle_score",
-            "BMI Prediction":"model_bmi",
-            "LDL/HDL/Total cholesterol":"model_ldl"
-        }
-        selected = (sel, name_map[sel])
 
-    st.write(f"Selected: **{selected[0]}**")
+    params = st.query_params
+
+    # Load selection from URL if available
+    if "card" in params:
+        model_key = params["card"]
+
+        for title, desc, key in cards:
+            if key == model_key:
+                st.session_state["selected_card"] = (title, key)
+                break
+
+    selected = st.session_state.get("selected_card")
+
+    if not selected:
+        st.warning("Please select a prediction card from the Home page.")
+        st.stop()
+
+    st.subheader(f"Selected: **{selected[0]}**")
     model = load_model(selected[1])
 
-    # Show only relevant inputs per selection
-    # Common inputs
+    # -----------------------------
+    # USER INPUTS
+    # -----------------------------
     col1, col2, col3 = st.columns(3)
-    age = col1.number_input("Age (years)", min_value=0, max_value=120, value=30)
-    gender = col1.selectbox("Gender", options=[1,2], format_func=lambda x: "Male" if x==1 else "Female")
-    height_cm = col2.number_input("Height (cm)", min_value=50, max_value=250, value=170)
-    weight_kg = col2.number_input("Weight (kg)", min_value=10, max_value=300, value=70)
-    bmi = round(weight_kg / ((height_cm/100)**2), 1)
+
+    age = col1.number_input("Age (years)", 0, 120, 30)
+    gender = col1.selectbox("Gender", [1, 2], format_func=lambda x: "Male" if x == 1 else "Female")
+
+    height_cm = col2.number_input("Height (cm)", 50, 250, 170)
+    weight_kg = col2.number_input("Weight (kg)", 10, 300, 70)
+    bmi = round(weight_kg / ((height_cm / 100) ** 2), 1)
     col2.write(f"Computed BMI: **{bmi}**")
-    waist = col3.number_input("Waist (cm)", min_value=30, max_value=200, value=80)
-    # Lifestyle quick
-    ever_smoke = col1.selectbox("Ever smoked?", options=[1,2], index=1, format_func=lambda x: "Yes" if x==1 else "No")
-    current_smoker = col1.selectbox("Currently smoking?", options=[1,2], index=1, format_func=lambda x: "Yes" if x==1 else "No")
-    ever_drink = col2.selectbox("Ever drink alcohol?", options=[1,2], index=1, format_func=lambda x: "Yes" if x==1 else "No")
-    binge_drink = col3.number_input("Binge episodes (past period)", min_value=0, max_value=100, value=0)
 
-    # Additional inputs depending on prediction
+    waist = col3.number_input("Waist (cm)", 30, 200, 80)
+
+    # Lifestyle
+    ever_smoke = col1.selectbox("Ever smoked?", [1, 2], index=1, format_func=lambda x: "Yes" if x == 1 else "No")
+    current_smoker = col1.selectbox("Currently smoking?", [1, 2], index=1, format_func=lambda x: "Yes" if x == 1 else "No")
+    ever_drink = col2.selectbox("Ever drink alcohol?", [1, 2], index=1, format_func=lambda x: "Yes" if x == 1 else "No")
+    binge_drink = col3.number_input("Binge episodes (past period)", 0, 100, 0)
+
+    # For BP models
     if "Blood Pressure" in selected[0]:
-        # we predict diagnosed_high_bp; user likely doesn't have physician diagnosis - we predict probability
-        st.markdown("**Optional:** If you have recent blood pressure values, enter them to increase accuracy.")
-        sys = st.number_input("Systolic (mmHg) - optional", value=0)
-        dia = st.number_input("Diastolic (mmHg) - optional", value=0)
+        sys = st.number_input("Systolic (optional)", 0, 250, 0)
+        dia = st.number_input("Diastolic (optional)", 0, 200, 0)
 
-    if "Cholesterol" in selected[0] and "LDL/HDL" not in selected[0]:
-        st.markdown("**Optional:** Provide lab values if known.")
-        hdl_val = st.number_input("HDL (mg/dL)", value=0)
-        ldl_val = st.number_input("LDL (mg/dL)", value=0)
-        tc_val = st.number_input("Total Cholesterol (mg/dL)", value=0)
-
-    if "Heart Disease" in selected[0]:
-        st.info("This prediction uses lifestyle + demographics + BP/Cholesterol (if provided)")
-
+    # Depression PHQ-9
     if "Depression" in selected[0]:
-        st.write("Please answer the PHQ-9 style questions (0=Not at all, 3=Nearly every day).")
+        st.write("Answer the PHQ-9 questions (0–3):")
         dpq = {}
-        phq_items = [
+        questions = [
             "Little interest or pleasure in doing things",
-            "Feeling down, depressed, or hopeless",
-            "Trouble falling asleep, staying asleep, or sleeping too much",
-            "Feeling tired or having little energy",
-            "Poor appetite or overeating",
+            "Feeling down or hopeless",
+            "Trouble sleeping",
+            "Feeling tired",
+            "Poor appetite",
             "Feeling bad about yourself",
             "Trouble concentrating",
-            "Moving or speaking slowly or being fidgety",
-            "Thoughts that you would be better off dead"
+            "Moving or speaking slowly / fidgety",
+            "Thoughts of self-harm"
         ]
-        for idx, q in enumerate(phq_items, start=1):
-            dpq[f"DPQ0{idx}"] = st.slider(q, 0, 3, 0)
+        for i, q in enumerate(questions, 1):
+            dpq[f"DPQ0{i}"] = st.slider(q, 0, 3, 0)
 
-    # If LDL/HDL/Total cholesterol prediction
-    if "LDL/HDL/Total" in selected[0]:
-        st.info("We will estimate LDL (or other labs) based on demographics and lifestyle.")
-
-    # SUBMIT button
+    # -----------------------------
+    # On Predict Click
+    # -----------------------------
     if st.button("Predict"):
-        # Prepare feature vector
+
+        # Medical averages fallback
+        avg_sys_val = sys if "sys" in locals() and sys > 0 else df["avg_sys"].mean()
+        avg_dia_val = dia if "dia" in locals() and dia > 0 else df["avg_dia"].mean()
+
+        # ---- IMPORTANT ----
+        # lifestyle_score comes from dataset definition
+        lifestyle_score = (
+            (1 if ever_smoke == 1 else 0) +
+            (1 if ever_drink == 1 else 0) +
+            (1 if binge_drink > 0 else 0)
+        )
+
         feat = {
-            "age": age, "bmi": bmi, "waist": waist, "height": height_cm,
-            "weight": weight_kg, "avg_sys": sys if 'sys' in locals() and sys>0 else df["avg_sys"].mean(),
-            "avg_dia": dia if 'dia' in locals() and dia>0 else df["avg_dia"].mean(),
-            "gender": gender, "race": df["race"].mode()[0], "education": df["education"].mode()[0],
-            "ever_smoked": ever_smoke, "current_smoker": current_smoker, "binge_drink": binge_drink,
-            "ever_drink": ever_drink
+            "age": age,
+            "bmi": bmi,
+            "waist": waist,
+            "height": height_cm,
+            "weight": weight_kg,
+            "avg_sys": avg_sys_val,
+            "avg_dia": avg_dia_val,
+            "gender": gender,
+            "race": df["race"].mode()[0],
+            "education": df["education"].mode()[0],
+            "ever_smoked": ever_smoke,
+            "current_smoker": current_smoker,
+            "ever_drink": ever_drink,
+            "binge_drink": binge_drink,
+            "lifestyle_score": lifestyle_score
         }
-        feat["lifestyle_score"] = 0
-        if feat["ever_smoked"]==1: feat["lifestyle_score"]+=1
-        if feat["ever_drink"]==1: feat["lifestyle_score"]+=1
-        if feat["binge_drink"]>0: feat["lifestyle_score"]+=1
 
         X_user = pd.DataFrame([feat])
 
-        # Special case: depression PHQ direct scoring
+        # ----------------------------
+        # Depression special case
+        # ----------------------------
         if "Depression" in selected[0]:
             phq_score = sum(dpq.values())
-            st.metric("PHQ-9 score", phq_score)
-            cat = "None" if phq_score<=4 else ("Mild" if phq_score<=9 else ("Moderate" if phq_score<=14 else ("Moderately Severe" if phq_score<=19 else "Severe")))
-            st.write("Category:", cat)
-            # also attempt model estimate if available
-            model_phq = load_model("model_phq9_score")
-            if model_phq:
-                pred = model_phq.predict(X_user)[0]
-                st.write("Model-estimated PHQ-9 (regression):", round(pred,2))
-                fig = gauge_chart(pred, "Estimated PHQ-9 Score", vmin=0, vmax=27, steps=[
-                    {'range':[0,4], 'color':'lightgreen'},
-                    {'range':[5,9], 'color':'yellow'},
-                    {'range':[10,14], 'color':'orange'},
-                    {'range':[15,19], 'color':'red'},
-                    {'range':[20,27], 'color':'darkred'}
-                ])
-                st.plotly_chart(fig)
+            st.metric("PHQ-9 Score", phq_score)
+
+            # Category text
+            levels = ["None", "Mild", "Moderate", "Moderately Severe", "Severe"]
+            boundaries = [4, 9, 14, 19]
+            category = levels[sum(phq_score > b for b in boundaries)]
+            st.write("Category:", category)
+
             st.stop()
 
-        # For other predictions:
-        model = load_model(selected[1])
+        # ----------------------------
+        # Predict using loaded model
+        # ----------------------------
         if model is None:
-            st.error("Model not found. Please run training script first.")
+            st.error("Model not found!")
             st.stop()
 
-        # Predict / postprocess
-        if "High Blood Pressure" in selected[0] or "Cholesterol" in selected[0] or "Heart Disease" in selected[0] or "Lifestyle Risk" in selected[0]:
+        prediction = model.predict(X_user)
+
+        # For classifiers → probability
+        if hasattr(model, "predict_proba"):
             prob = model.predict_proba(X_user)
-            # prefer class 1 probability if available
-            if prob.shape[1] == 2:
-                p1 = prob[0,1]*100
-            else:
-                # if multiclass (lifestyle), get weighted score
-                p1 = np.dot(np.arange(prob.shape[1]), prob[0]) * (100/(prob.shape[1]-1))
-            st.metric("Risk (0-100%)", f"{p1:.1f}%")
-            # show gauge
-            fig = gauge_chart(p1, selected[0], vmin=0, vmax=100, steps=[
-                {'range':[0,33],'color':'lightgreen'},
-                {'range':[33,66],'color':'yellow'},
-                {'range':[66,100],'color':'red'}
-            ])
-            st.plotly_chart(fig)
-
-            # show user position on population histogram of a related variable
-            if "Blood Pressure" in selected[0]:
-                st.plotly_chart(percentile_overlay(df["avg_sys"], X_user["avg_sys"].iloc[0], "Systolic BP distribution"))
-            if "Cholesterol" in selected[0]:
-                st.plotly_chart(percentile_overlay(df["total_cholesterol"], X_user.get("total_cholesterol", df["total_cholesterol"].mean()), "Total Cholesterol distribution"))
-            if "Lifestyle" in selected[0]:
-                st.plotly_chart(percentile_overlay(df["lifestyle_score"], feat["lifestyle_score"], "Lifestyle score distribution"))
-
-        # Regression predictions (bmi, ldl/hdl/total, phq regression handled above)
-        elif "BMI" in selected[0] or "LDL/HDL/Total" in selected[0] or "BMI Prediction" in selected[0]:
-            pred = model.predict(X_user)[0]
-            st.metric(f"{selected[0]} predicted value", round(pred,2))
-            # gauge scales differ
-            if "BMI" in selected[0]:
-                fig = gauge_chart(pred, "Predicted BMI", vmin=10, vmax=50, steps=[
-                    {'range':[10,24.9],'color':'lightgreen'},
-                    {'range':[25,29.9],'color':'yellow'},
-                    {'range':[30,50],'color':'red'}
-                ])
-                st.plotly_chart(fig)
-            else:
-                st.plotly_chart(gauge_chart(pred, selected[0], vmin=0, vmax=200))
+            risk = prob[0].max() * 100
+            st.metric("Predicted Risk (%)", f"{risk:.1f}%")
+            st.plotly_chart(gauge_chart(risk, selected[0], 0, 100))
+        else:
+            # Regression
+            value = prediction[0]
+            st.metric("Predicted Value", f"{value:.2f}")
+            st.plotly_chart(gauge_chart(value, selected[0], 0, 200))
 
 # ---------- EDA ----------
 elif page == "EDA":
