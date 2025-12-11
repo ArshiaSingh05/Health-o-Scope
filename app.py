@@ -62,7 +62,7 @@ cards = [
     ("Blood Pressure Check", "Checks your BP-related health risk.", "model_high_bp"),
     ("Cholesterol Check", "Predicts overall cholesterol risk.", "model_high_chol"),
     ("Heart Health Check", "Estimates heart disease likelihood.", "model_heart_disease"),
-    ("Mood & Mental Well-Being", "Assesses mood using PHQ-9 questionnaire.", "model_phq9_score"),
+    ("Mood & Mental Well-Being", "Assesses mood using PHQ-9 questionnaire.", "model_phq9_category"),
     ("Daily Habits Health Score", "Rates smoking & drinking lifestyle habits.", "model_lifestyle_score"),
     ("Body Weight Indicator (BMI)", "Estimates BMI from body measures.", "model_bmi"),
     ("Detailed Cholesterol Report", "Predicts LDL, HDL & Total Cholesterol.", "model_ldl"),
@@ -174,8 +174,8 @@ elif page == "Predict":
         sys = df["avg_sys"].mean()
         dia = df["avg_dia"].mean()
 
-    # Depression questions
     if "Depression" in selected[0]:
+
         dpq = {}
         questions = [
             "Little interest or pleasure",
@@ -188,16 +188,53 @@ elif page == "Predict":
             "Slow/fidgety movement",
             "Thoughts of self-harm"
         ]
+
         for i, q in enumerate(questions, 1):
             dpq[f"DPQ0{i}"] = st.slider(q, 0, 3, 0)
 
     if st.button("Predict"):
 
-        # Depression → special case
-        if "Depression" in selected[0]:
-            score = sum(dpq.values())
-            st.metric("PHQ-9 Score", score)
-            st.stop()
+        phq_score = sum(dpq.values())
+        st.metric("PHQ-9 Total Score", phq_score)
+
+        # Load classification model
+        model = load_model("model_phq9_category")
+
+        # Predict category
+        category_idx = model.predict([[phq_score]])[0]
+
+        categories = ["None", "Mild", "Moderate", "Moderately Severe", "Severe"]
+        predicted_category = categories[int(category_idx)]
+
+        st.subheader(f"Depression Category: **{predicted_category}**")
+
+        # Color gauge
+        colors = {
+            "None": "lightgreen",
+            "Mild": "yellow",
+            "Moderate": "orange",
+            "Moderately Severe": "red",
+            "Severe": "darkred"
+        }
+
+        st.plotly_chart(
+            gauge_chart(
+                phq_score,
+                "PHQ-9 Score",
+                0,
+                27,
+                steps=[
+                    {'range': [0, 4], 'color': 'lightgreen'},
+                    {'range': [5, 9], 'color': 'yellow'},
+                    {'range': [10, 14], 'color': 'orange'},
+                    {'range': [15, 19], 'color': 'red'},
+                    {'range': [20, 27], 'color': 'darkred'},
+                ]
+            )
+        )
+
+        st.stop()
+
 
         feat = {
             "age": age,
